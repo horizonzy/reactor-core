@@ -5895,27 +5895,29 @@ public abstract class Flux<T> implements CorePublisher<T> {
 	}
 
 	/**
-	 * Ensure that the total amount requested upstream is capped at {@code cap}.
+	 * Take only the first N values from this {@link Flux}, if available.
+	 * Furthermore, ensure that the total amount requested upstream is capped at {@code n}.
+	 * <p>
+	 * <img class="marble" src="doc-files/marbles/limitRequest.svg" alt="">
+	 * <p>
 	 * Backpressure signals from downstream subscribers are smaller than the cap are
 	 * propagated as is, but if they would cause the total requested amount to go over the
 	 * cap, they are reduced to the minimum value that doesn't go over.
 	 * <p>
 	 * As a result, this operator never let the upstream produce more elements than the
-	 * cap, and it can be used as a stricter form of {@link #take(long)}. Typically useful
-	 * for cases where a race between request and cancellation can lead the upstream to
+	 * cap, and it can be used as a stricter form of {@link #takeEager(long)} (long)}.
+	 * Typically useful for cases where a race between request and cancellation can lead the upstream to
 	 * producing a lot of extraneous data, and such a production is undesirable (e.g.
 	 * a source that would send the extraneous data over the network).
-	 * <p>
-	 * <img class="marble" src="doc-files/marbles/limitRequest.svg" alt="">
 	 *
-	 * @param requestCap the global backpressure limit to apply to the sum of downstream's requests
+	 * @param n the number of elements to emit from this flux, which is also the backpressure cap for downstream
 	 *
-	 * @return a {@link Flux} that requests AT MOST {@code cap} from upstream in total.
+	 * @return a {@link Flux} of {@code n} elements from the source, that requests AT MOST {@code n} from upstream in total.
 	 * @see #limitRate(int)
 	 * @see #take(long)
 	 */
-	public final Flux<T> limitRequest(long requestCap) {
-		return onAssembly(new FluxLimitRequest<>(this, requestCap));
+	public final Flux<T> limitRequest(long n) {
+		return onAssembly(new FluxLimitRequest<>(this, n));
 	}
 
 	/**
@@ -8587,12 +8589,14 @@ public abstract class Flux<T> implements CorePublisher<T> {
 	 * <p>
 	 * <img class="marble" src="doc-files/marbles/take.svg" alt="">
 	 * <p>
-	 * Note that this operator doesn't manipulate the backpressure requested amount.
-	 * Rather, it merely lets requests from downstream propagate as is and cancels once
-	 * N elements have been emitted. As a result, the source could produce a lot of
-	 * extraneous elements in the meantime. If that behavior is undesirable and you do
-	 * not own the request from downstream (e.g. prefetching operators), consider
-	 * using {@link #limitRequest(long)} instead.
+	 * <b>Warning:</b> The below behavior will change in 3.5.0 from that of
+	 * {@link #takeEager(long)} to that of {@link #limitRequest(long)}.
+	 * <p>
+	 * Note that this operator doesn't propagate the backpressure requested amount.
+	 * Rather, it makes an unbounded request and cancels once N elements have been emitted.
+	 * As a result, the source could produce a lot of extraneous elements in the meantime.
+	 * If that behavior is undesirable and you do not own the request from downstream
+	 * (e.g. prefetching operators), consider using {@link #limitRequest(long)} instead.
    *
 	 * @param n the number of items to emit from this {@link Flux}
 	 *
@@ -8600,6 +8604,29 @@ public abstract class Flux<T> implements CorePublisher<T> {
 	 * @see #limitRequest(long)
 	 */
 	public final Flux<T> take(long n) {
+		return takeEager(n);
+	}
+
+	/**
+	 * Take only the first N values from this {@link Flux}, if available.
+	 * <p>
+	 * If N is zero, the resulting {@link Flux} completes as soon as this {@link Flux}
+	 * signals its first value (which is not not relayed, though).
+	 * <p>
+	 * <img class="marble" src="doc-files/marbles/takeEager.svg" alt="">
+	 * <p>
+	 * Note that this operator doesn't propagate the backpressure requested amount.
+	 * Rather, it makes an unbounded request and cancels once N elements have been emitted.
+	 * As a result, the source could produce a lot of extraneous elements in the meantime.
+	 * If that behavior is undesirable and you do not own the request from downstream
+	 * (e.g. prefetching operators), consider using {@link #limitRequest(long)} instead.
+	 *
+	 * @param n the number of items to emit from this {@link Flux}
+	 *
+	 * @return a {@link Flux} limited to size N
+	 * @see #limitRequest(long)
+	 */
+	public final Flux<T> takeEager(long n) {
 		if (this instanceof Fuseable) {
 			return onAssembly(new FluxTakeFuseable<>(this, n));
 		}
